@@ -3,6 +3,11 @@ import OpenAI from "openai";
 
 const router: IRouter = Router();
 
+const grokClient = new OpenAI({
+  apiKey: process.env.GROK_API_KEY || "",
+  baseURL: "https://api.x.ai/v1",
+});
+
 interface Message {
   role: string;
   text: string;
