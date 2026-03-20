@@ -1,0 +1,318 @@
+You are building a full-stack AI-powered conversational news companion web app called [APP NAME]. 
+
+This is a hackathon project combining Firecrawl Search API and ElevenLabs Conversational Agents (ElevenAgents). Build the complete working framework — functionality first, polish second.
+
+=================================================
+TECH STACK
+=================================================
+- Next.js 14 (App Router, TypeScript)
+- Tailwind CSS
+- Zustand (state management)
+- Framer Motion (animations)
+- @mendable/firecrawl-js (official SDK)
+- @elevenlabs/elevenlabs-js (official SDK)
+- Vercel (deployment target)
+
+=================================================
+WHAT THIS APP DOES
+=================================================
+A personal AI news companion that a user names themselves. 
+The companion:
+1. Activates with the user's chosen name and voice
+2. Answers any news/world event question with LIVE web data via Firecrawl Search
+3. Has 3 modes the user can switch between mid-conversation:
+   - CHAT MODE: Talk to your companion conversationally. Ask anything. Get short, clear answers from live web search.
+   - DEBATE ME MODE: Companion takes the opposing view on the current topic and debates the user voice-to-voice using live facts
+   - WATCH DEBATE MODE: Two AI agents (The Analyst + The Advocate) debate the topic live with different voices. User can interrupt anytime.
+
+=================================================
+COMPLETE FILE STRUCTURE TO BUILD
+=================================================
+
+your-app/
+├── app/
+│   ├── page.tsx                    ← Onboarding: name input + voice picker
+│   ├── companion/page.tsx          ← Main app screen
+│   ├── layout.tsx                  ← Global layout
+│   └── api/
+│       ├── search/route.ts         ← Firecrawl Search webhook endpoint
+│       ├── agent-token/route.ts    ← ElevenLabs signed session token
+│       └── verdict/route.ts        ← Post-debate summary via OpenAI
+├── components/
+│   ├── Onboarding.tsx              ← Name input + voice selector
+│   ├── CompanionScreen.tsx         ← Main UI wrapper
+│   ├── VoiceOrb.tsx                ← Animated orb (idle/listening/speaking)
+│   ├── ModeBar.tsx                 ← Chat / Debate Me / Watch Debate switcher
+│   ├── DebateArena.tsx             ← Two-agent debate UI
+│   ├── TranscriptFeed.tsx          ← Live scrolling conversation
+│   └── VerdictCard.tsx             ← End-of-debate summary card
+├── lib/
+│   ├── firecrawl.ts                ← Firecrawl client + search function
+│   ├── elevenlabs.ts               ← ElevenLabs agent session helpers
+│   └── prompts.ts                  ← ALL system prompts in one file
+├── store/
+│   └── useAppStore.ts              ← Zustand global store
+└── .env.local                      ← API keys (never commit)
+
+=================================================
+ENV VARIABLES NEEDED
+=================================================
+
+FIRECRAWL_API_KEY=
+ELEVENLABS_API_KEY=
+ELEVENLABS_AGENT_COMPANION_ID=
+ELEVENLABS_AGENT_ANALYST_ID=
+ELEVENLABS_AGENT_ADVOCATE_ID=
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+=================================================
+BUILD EACH FILE — EXACT SPECIFICATIONS
+=================================================
+
+--- store/useAppStore.ts ---
+Zustand store with these fields:
+- companionName: string (user's chosen name for companion, e.g. "Nova")
+- voiceId: string (ElevenLabs voice ID chosen by user)
+- mode: 'chat' | 'debate-me' | 'watch-debate'
+- isListening: boolean
+- isSpeaking: boolean
+- activeAgent: 'companion' | 'analyst' | 'advocate'
+- transcript: Array<{ role: 'user' | 'companion' | 'analyst' | 'advocate', text: string, timestamp: number }>
+- currentTopic: string
+- isDebateActive: boolean
+- setCompanionName, setVoiceId, setMode, setTranscript, setCurrentTopic — all setters
+
+--- lib/prompts.ts ---
+Export 3 system prompts:
+
+COMPANION_PROMPT:
+"You are {companionName}, a personal AI news companion. You are friendly, sharp, and conversational — like a well-informed friend. When users ask about news or world events, use the search_web tool to get live data before answering. Always give SHORT answers — maximum 3-4 sentences. Never give essays. After answering, invite follow-up naturally. If the user wants to debate, switch to an opposing position and challenge them respectfully but firmly."
+
+ANALYST_PROMPT:
+"You are The Analyst — a sharp, data-driven news commentator in a live debate. You argue using facts, statistics, and logical reasoning ONLY. You are calm, precise, and never emotional. Always use the search_web tool to back your points with real data. Keep every response under 4 sentences. You are debating The Advocate who argues from emotions and values — push back on their sentiment with hard evidence. Be direct and punchy."
+
+ADVOCATE_PROMPT:
+"You are The Advocate — a passionate, values-driven voice in a live debate. You argue by centering human impact, fairness, and moral urgency. You are warm but fierce. Always use the search_web tool to find the human angle in the story. Keep every response under 4 sentences. You are debating The Analyst who only cares about data — remind them that behind every statistic is a human life. Be emotionally compelling and direct."
+
+--- lib/firecrawl.ts ---
+import FirecrawlApp from '@mendable/firecrawl-js'
+
+Initialize client with FIRECRAWL_API_KEY.
+
+Export async function searchWeb(query: string): Promise<string>
+- Calls fc.search(query, { limit: 5 })
+- Maps results to: "${title}: ${description}" joined by newlines
+- Returns the combined string
+- Wraps in try/catch, returns "No results found" on error
+
+--- lib/elevenlabs.ts ---
+Import ElevenLabsClient from @elevenlabs/elevenlabs-js
+
+Export helper functions:
+- getAgentId(mode: 'companion' | 'analyst' | 'advocate'): string
+  Returns the correct env var agent ID based on mode
+
+- createSignedUrl(agentId: string): Promise<string>
+  Calls ElevenLabs API to get a signed WebSocket URL for the session
+  Uses ELEVENLABS_API_KEY
+
+--- app/api/search/route.ts ---
+POST endpoint.
+Body: { query: string }
+- Calls searchWeb(query) from lib/firecrawl.ts
+- Returns: { result: string }
+- This is the webhook URL you register in ElevenLabs dashboard for all 3 agents
+
+--- app/api/agent-token/route.ts ---
+POST endpoint.
+Body: { agentId: string }
+- Calls ElevenLabs API to get signed session token
+- Returns: { signedUrl: string }
+- This keeps the API key server-side, never exposed to client
+
+--- app/api/verdict/route.ts ---
+POST endpoint.
+Body: { transcript: Message[] }
+- Takes the debate transcript
+- Calls OpenAI GPT-4o-mini with a simple prompt:
+  "Summarise this debate. Give 2 bullet points for The Analyst's strongest arguments and 2 for The Advocate's. Then one line verdict: who made the stronger case and why. Be concise."
+- Returns: { verdict: string }
+
+--- app/page.tsx + components/Onboarding.tsx ---
+Two-step onboarding:
+
+STEP 1 — Name your companion
+- Large centered heading: "What do you want to call your AI companion?"
+- Single text input, placeholder "Nova, Alex, Sage..."
+- Continue button
+
+STEP 2 — Pick a voice
+- Heading: "Choose your companion's voice"
+- Show 5 voice options as cards. Each card has:
+  - Voice name
+  - Short description (e.g. "Warm & friendly", "Sharp & confident")
+  - Play button to preview a sample
+- Use these ElevenLabs voice IDs for the 5 options:
+  - Rachel (21m00Tcm4TlvDq8ikWAM) — Warm & friendly
+  - Adam (pNInz6obpgDQGcFmaJgB) — Deep & authoritative  
+  - Bella (EXAVITQu4vr4xnSDxMaL) — Soft & calm
+  - Antoni (ErXwobaYiN019PkySvjV) — Sharp & confident
+  - Elli (MF3mGyEYCl7XYWbV9V9) — Clear & energetic
+- On voice select → save to Zustand → navigate to /companion
+
+--- app/companion/page.tsx + components/CompanionScreen.tsx ---
+Main app screen. Dark background.
+
+Layout:
+- Top: companion name + small status indicator (online dot)
+- Middle: VoiceOrb (main focus of screen)
+- Below orb: TranscriptFeed (last 5 messages visible, scrollable)  
+- Bottom: ModeBar + mic button
+
+On mount:
+- Load companionName + voiceId from Zustand
+- Call /api/agent-token to get signed URL for companion agent
+- Connect ElevenAgent session
+- Agent speaks greeting: "[Name] is ready. What do you want to know today?"
+
+--- components/VoiceOrb.tsx ---
+Large circular animated orb using Framer Motion.
+3 states driven by isListening + isSpeaking from store:
+- IDLE: slow gentle pulse, muted color (dark blue/purple)
+- LISTENING: faster pulse, brighter color (blue), scale slightly larger
+- SPEAKING: rapid wave-like animation, bright color (purple/violet), scale larger
+
+Use animate prop with spring physics. No canvas, pure CSS + Framer Motion.
+
+--- components/ModeBar.tsx ---
+Three mode buttons:
+- 💬 Chat (default)
+- ⚔️ Debate Me  
+- 👁️ Watch Debate
+
+Active mode highlighted. On mode switch:
+- Update Zustand mode
+- If switching to 'debate-me': disconnect companion session, connect analyst session, inject current topic context
+- If switching to 'watch-debate': connect BOTH analyst + advocate sessions, start turn-taking loop
+- If switching back to 'chat': disconnect debate sessions, reconnect companion
+
+--- components/DebateArena.tsx ---
+Only visible when mode is 'watch-debate'.
+Two-panel layout side by side:
+- Left panel: The Analyst (blue theme) — name, speaking indicator, their transcript lines
+- Right panel: The Advocate (coral/red theme) — name, speaking indicator, their transcript lines
+- Center: VS badge
+- Below both: interrupt button "Jump In" → opens user mic
+
+Turn-taking logic:
+- Simple state: whose turn it is
+- When Analyst finishes speaking → trigger Advocate to respond
+- When Advocate finishes → trigger Analyst
+- Repeat until user interrupts or switches mode
+- After 4 full exchanges → auto-call /api/verdict → show VerdictCard
+
+--- components/TranscriptFeed.tsx ---
+Scrolling feed of conversation messages.
+Each message:
+- Role label (companion name, "You", "Analyst", "Advocate")
+- Message text
+- Timestamp
+Color coded by role. Auto-scroll to latest. Max height with overflow scroll.
+
+--- components/VerdictCard.tsx ---
+Appears after watch-debate ends.
+Shows:
+- "Debate Summary" heading
+- Analyst's 2 strongest points (blue)
+- Advocate's 2 strongest points (coral)
+- One line verdict
+- Two buttons: "Debate Again" | "New Topic"
+
+=================================================
+ELEVENLABS AGENT CONFIGURATION
+(Set this up manually in ElevenLabs dashboard)
+=================================================
+
+Create 3 agents. For EACH agent:
+
+1. Set the system prompt from lib/prompts.ts
+2. Add ONE webhook tool with these settings:
+   - Tool name: search_web
+   - Description: "Search the web for latest news and information on any topic"
+   - URL: {NEXT_PUBLIC_APP_URL}/api/search
+   - Method: POST
+   - Parameters: query (string, required) — "The search query to look up"
+3. Set LLM: GPT-4o or Claude 3.5 Sonnet
+4. Set voice:
+   - Companion: determined by user selection at runtime (pass voiceId dynamically)
+   - Analyst: Adam voice (deep, calm)
+   - Advocate: Rachel voice (warm, passionate)
+5. First message:
+   - Companion: "{companionName} is ready. What do you want to know today?"
+   - Analyst: "I'm The Analyst. Give me a topic and I'll give you the facts."
+   - Advocate: "I'm The Advocate. What are we fighting for today?"
+
+=================================================
+STYLING RULES
+=================================================
+- Dark theme ONLY. Background: #0a0a0f or similar deep dark
+- Primary accent: purple/violet (#7C3AED or similar)
+- Analyst accent: blue (#2563EB)
+- Advocate accent: coral/red (#DC2626)
+- Font: Inter or Geist (Next.js default)
+- The VoiceOrb should be the visual centerpiece — make it dramatic
+- Mobile responsive — demo will likely be filmed on phone
+
+=================================================
+WHAT NOT TO BUILD YET
+=================================================
+- No authentication
+- No database
+- No user accounts
+- No payment
+- No history persistence beyond current session
+- No complex animations beyond the orb and transitions
+
+=================================================
+BUILD ORDER
+=================================================
+1. Project setup + install dependencies
+2. .env.local with placeholder values
+3. store/useAppStore.ts
+4. lib/prompts.ts
+5. lib/firecrawl.ts
+6. lib/elevenlabs.ts
+7. app/api/search/route.ts  ← TEST THIS FIRST with a curl call
+8. app/api/agent-token/route.ts
+9. app/api/verdict/route.ts
+10. components/Onboarding.tsx + app/page.tsx
+11. components/VoiceOrb.tsx
+12. components/TranscriptFeed.tsx
+13. components/ModeBar.tsx
+14. components/CompanionScreen.tsx + app/companion/page.tsx
+15. components/DebateArena.tsx
+16. components/VerdictCard.tsx
+17. Wire everything together, test full flow end to end
+
+=================================================
+DEFINITION OF DONE FOR FRAMEWORK
+=================================================
+✓ User can enter name + pick voice on onboarding
+✓ /api/search returns real Firecrawl results when called
+✓ Companion agent connects and speaks greeting
+✓ User can speak a news question and get a live answer
+✓ Mode switching connects correct agent
+✓ Watch debate shows two agents taking turns
+✓ Verdict card appears after debate
+✓ App runs on localhost:3000 without errors
+✓ Ready to deploy to Vercel
+
+=================================================
+IMPORTANT NOTES FOR THE AGENT
+=================================================
+- Keep ALL API keys server-side only (in API routes). Never expose to client.
+- The ElevenLabs WebSocket connection happens CLIENT-SIDE using the signed URL from /api/agent-token
+- Firecrawl Search is called SERVER-SIDE only (via the webhook from ElevenLabs → your API route)
+- For the turn-taking in watch-debate mode: use a simple boolean state + useEffect to trigger the next agent when the current one finishes. Do NOT overcomplicate this.
+- The companion's voiceId is dynamic — it should be passed when creating the agent session, not hardcoded
+- Handle all loading and error states — show the user something meaningful if an API call fails
