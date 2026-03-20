@@ -5,7 +5,7 @@ const router: IRouter = Router();
 
 const grokClient = new OpenAI({
   apiKey: process.env.GROK_API_KEY || "",
-  baseURL: "https://api.x.ai/v1",
+  baseURL: "https://api.groq.com/openai/v1",
 });
 
 interface Message {
@@ -20,16 +20,13 @@ router.post("/verdict", async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.OPENAI_API_KEY || "";
-  if (!apiKey) {
+  if (!process.env.GROK_API_KEY) {
     res.json({
       verdict:
-        "**Verdict unavailable** — OpenAI API key not configured.\n\nBoth debaters made compelling arguments. Add your OPENAI_API_KEY to get an AI-generated verdict.",
+        "**Verdict unavailable** — Grok API key not configured.\n\nBoth debaters made compelling arguments. Add your GROK_API_KEY to get an AI-generated verdict.",
     });
     return;
   }
-
-  const openai = new OpenAI({ apiKey });
 
   const formatted = transcript
     .map((m) => `${m.role.toUpperCase()}: ${m.text}`)
@@ -38,8 +35,8 @@ router.post("/verdict", async (req, res) => {
   const prompt = `You are a debate judge. Here is the transcript of a debate between The Analyst (data-driven) and The Advocate (values-driven):\n\n${formatted}\n\nSummarise this debate. Give 2 bullet points for The Analyst's strongest arguments and 2 for The Advocate's. Then one line verdict: who made the stronger case and why. Be concise.`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const completion = await grokClient.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 400,
     });
