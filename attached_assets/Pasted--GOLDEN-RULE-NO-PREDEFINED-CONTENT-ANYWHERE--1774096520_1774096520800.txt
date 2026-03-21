@@ -1,0 +1,378 @@
+=================================================
+GOLDEN RULE — NO PREDEFINED CONTENT ANYWHERE
+=================================================
+
+This app's entire value is real-time live data.
+NOTHING news-related should ever be hardcoded.
+
+This means:
+✗ No hardcoded news topics
+✗ No hardcoded trending items  
+✗ No hardcoded example questions
+✗ No hardcoded article titles or descriptions
+✗ No placeholder "sample" news content
+✗ No mock data that looks like real news
+
+Every single piece of news content in the app
+must come from a live Firecrawl Search API call.
+
+If Firecrawl hasn't been called yet → show empty 
+state or loading state. Never fake it with static content.
+
+The only things allowed to be static:
+✓ UI labels ("What do you want to know?")
+✓ Voice names ("Rachel", "Adam")  
+✓ Mode names ("Chat", "Debate Me", "Watch Debate")
+✓ App name and branding
+✓ Error messages
+
+=================================================
+
+We have a working AI News Companion app. The framework is complete:
+- Onboarding (name + voice picker) ✅
+- Voice Orb with animations ✅  
+- 3 modes: Chat, Debate Me, Watch Debate ✅
+- Transcript feed ✅
+- Verdict card ✅
+- /api/search (Firecrawl) ✅
+- /api/agent-token (ElevenLabs) ✅
+- /api/verdict (Groq) ✅
+
+NOW BUILD: The Visual News Cards Feature
+=================================================
+This is the most important feature addition.
+When the agent speaks about news, relevant visual 
+cards appear on screen SIMULTANEOUSLY with the voice.
+Voice + visuals in sync. This is what wins the hackathon.
+=================================================
+
+=================================================
+HOW IT WORKS — THE EXACT MECHANISM
+=================================================
+
+ElevenLabs has a feature called CLIENT TOOLS.
+A client tool is a tool the agent calls that instead 
+of hitting a server — it sends an event directly 
+to your frontend JavaScript.
+
+Flow:
+1. User asks "What's new with Claude?"
+2. Agent calls search_web webhook → Firecrawl returns results
+3. Agent ALSO calls show_cards client tool → sends card data to frontend
+4. Frontend receives the card data → renders news cards
+5. Cards slide in WHILE the agent is still speaking the answer
+6. User says "show me the post" → agent calls show_cards again with expanded view
+
+=================================================
+STEP 1 — UPDATE /api/search/route.ts
+=================================================
+
+The search route currently returns just { result: string }
+Update it to return BOTH the spoken text AND the structured card data:
+
+export async function POST(req) {
+  const { query } = await req.json()
+  
+  const results = await fc.search(query, { limit: 5 })
+  
+  // Text for agent to speak — short summaries only
+  const spokenText = results.data
+    .slice(0, 3)
+    .map(r => `${r.title}: ${r.description}`)
+    .join('\n')
+  
+  // Structured data for visual cards
+  const cards = results.data.slice(0, 5).map(r => ({
+    title: r.title || '',
+    description: r.description || '',
+    url: r.url || '',
+    image: r.metadata?.ogImage || r.metadata?.image || null,
+    source: new URL(r.url).hostname.replace('www.', '') || '',
+    publishedDate: r.metadata?.publishedDate || null,
+  }))
+  
+  return Response.json({ 
+    result: spokenText,  // what agent speaks
+    cards: cards         // what frontend renders
+  })
+}
+
+=================================================
+STEP 2 — CREATE THE NewsCard COMPONENT
+=================================================
+
+Create components/NewsCard.tsx
+
+A single news result card with:
+- Thumbnail image (og:image from Firecrawl) — if no image, show source favicon or gradient placeholder
+- Source name + favicon (e.g. "techcrunch.com")  
+- Published time ("2h ago" — use date-fns to format)
+- Headline (bold, 2 lines max, truncate)
+- Short description (2 lines max, truncate, muted color)
+- "Read more →" link that opens source URL in new tab
+
+Card styling:
+- Dark background (#111118 or similar)
+- Subtle border (1px, very dark)
+- Rounded corners (12px)
+- Hover: slight border brightening + scale(1.01)
+- Image: 16:9 ratio, object-cover, rounded top corners
+- Width: ~280px on desktop, full width on mobile
+- Smooth slide-in animation with Framer Motion (slide up + fade in, staggered by index)
+
+=================================================
+STEP 3 — CREATE NewsCardsPanel COMPONENT
+=================================================
+
+Create components/NewsCardsPanel.tsx
+
+This is the container that holds all current cards.
+It sits BETWEEN the VoiceOrb and the TranscriptFeed.
+
+Props:
+- cards: CardData[]
+- isVisible: boolean
+- onCardClick: (card: CardData) => void
+
+Behavior:
+- When cards arrive → animate in from bottom, staggered 0.1s per card
+- Show max 3 cards in a horizontal scroll row on desktop
+- On mobile: vertical stack, full width
+- When new cards arrive (new question) → old cards fade out, new ones slide in
+- Empty state: invisible (takes no space)
+
+Layout on screen:
+[Voice Orb]
+[NewsCardsPanel] ← slides in here when cards exist
+[TranscriptFeed]
+[ModeBar]
+
+=================================================
+STEP 4 — ADD CLIENT TOOL IN ELEVENLABS DASHBOARD
+=================================================
+
+In ElevenLabs dashboard, for EACH of your 3 agents,
+add a CLIENT TOOL (not a webhook — a client tool):
+
+Tool name: show_cards
+Description: "Display relevant news cards on screen when answering a news question. Call this EVERY TIME you use search results to answer. Pass the search results as cards."
+Parameters:
+  - cards (array) — array of objects with: title, description, url, image, source, publishedDate
+  - query (string) — the user's original question
+
+This tool does NOT hit a server URL.
+It sends an event to the frontend WebSocket connection.
+The frontend listens for this event and renders the cards.
+
+=================================================
+STEP 5 — LISTEN FOR CLIENT TOOL IN FRONTEND
+=================================================
+
+In your ElevenLabs WebSocket connection setup,
+add an event listener for client tool calls.
+
+Using the ElevenLabs JS SDK:
+
+conversation.on('client_tool_call', (toolCall) => {
+  if (toolCall.tool_name === 'show_cards') {
+    const { cards, query } = toolCall.parameters
+    // Update Zustand store with new cards
+    useAppStore.getState().setNewsCards(cards)
+    useAppStore.getState().setCurrentQuery(query)
+    // Tool must return a result to the agent
+    return { result: 'Cards displayed successfully' }
+  }
+})
+
+Add to Zustand store:
+- newsCards: CardData[]
+- currentQuery: string
+- setNewsCards(cards: CardData[]): void
+- setCurrentQuery(query: string): void
+
+=================================================
+STEP 6 — UPDATE SYSTEM PROMPTS IN lib/prompts.ts
+=================================================
+
+Add this instruction to ALL THREE agent system prompts:
+
+"IMPORTANT: Every time you search for information and get results, you MUST call the show_cards tool with those results BEFORE speaking your answer. This displays visual cards on screen for the user. Never answer a news question without first calling show_cards. The cards and your spoken answer should be about the same information."
+
+This ensures cards ALWAYS appear when the agent has search results.
+
+=================================================
+STEP 7 — ADD EXPANDED CARD VIEW
+=================================================
+
+When user says "show me the post" / "show me more" / 
+"open that" / "read the full article":
+
+The agent should call show_cards again with:
+- Same cards but with expanded: true flag on the relevant card
+
+Create components/ExpandedCard.tsx:
+- Full screen overlay (modal)
+- Large image at top
+- Full headline
+- Full description/content (use Firecrawl /scrape on the URL to get full content)
+- Source link
+- Share button
+- Close button (X)
+
+Add a new API route: /api/scrape/route.ts
+POST body: { url: string }
+- Calls fc.scrapeUrl(url, { formats: ['markdown'] })
+- Returns { content: string } — the full article markdown
+- Used when user wants to read the full article
+
+=================================================
+STEP 8 — TRENDING TOPICS (FULLY DYNAMIC)
+=================================================
+
+On app load, BEFORE any conversation starts,
+automatically call /api/search with the query:
+"top world news today breaking"
+
+Use the returned results to generate the trending 
+chips dynamically from Firecrawl Search results.
+
+Each chip = one real result from Firecrawl:
+- title trimmed to 4-5 words max
+- emoji auto-assigned based on category keyword 
+  detection (war/conflict → 🌍, tech/AI → 🤖, 
+  crypto/market → 💰, space → 🚀, sports → ⚽)
+
+Behavior:
+- App opens → /api/search fires immediately in background
+- Skeleton placeholder chips show while loading
+- Real chips replace skeletons when results arrive
+- Every refresh = fresh chips from today's actual news
+- Tapping chip fires that topic to the agent
+
+NEVER hardcode any topic, news item, or chip label.
+Everything comes from Firecrawl Search live.
+
+Create components/TrendingTopics.tsx
+
+Behavior:
+- Show as horizontal scrollable pill row below the orb
+- When user taps a chip → it fires that topic directly to the agent as if user spoke it
+- Chips disappear once conversation starts (after first message)
+- On mobile: swipeable horizontal scroll
+
+Styling:
+- Dark pill with subtle border
+- Emoji + text
+- Active/hover: purple highlight
+- Smooth horizontal scroll, no scrollbar visible
+
+=================================================
+STEP 9 — SOCIAL SHARE BUTTON
+=================================================
+
+After Watch Debate ends and VerdictCard appears,
+add a "Share this debate" button.
+
+On click → generates a shareable image (use html2canvas) showing:
+- Topic debated
+- Key point from Analyst
+- Key point from Advocate  
+- Verdict line
+- App name + logo
+
+Downloads as PNG. 
+User posts this to social media with the video.
+This is also content for the hackathon social posts requirement.
+
+=================================================
+STEP 10 — FINAL POLISH FOR VIDEO DEMO
+=================================================
+
+These small things matter enormously for the demo video:
+
+1. Loading state when searching:
+   - While Firecrawl is searching, show a subtle pulsing skeleton 
+     where cards will appear
+   - Text below orb: "Searching the web..." 
+
+2. Source badges on transcript:
+   - After an agent message, show tiny source pills:
+     [techcrunch.com] [reuters.com]
+   - Tapping opens the source URL
+
+3. "Live" badge:
+   - Small animated red dot + "LIVE" text somewhere visible
+   - Signals to viewer (and judges) that data is real-time
+
+4. Keyboard shortcut:
+   - Spacebar = hold to talk (for desktop demo recording)
+
+5. Connection status:
+   - When connected → green dot + "Connected"
+   - When searching → yellow dot + "Searching..."
+   - When speaking → purple dot + "Speaking"
+   - When listening → blue dot + "Listening"
+
+=================================================
+BUILD ORDER FOR THIS PROMPT
+=================================================
+
+1. Update /api/search to return cards data
+2. Add newsCards + setNewsCards to Zustand store
+3. Create NewsCard.tsx component  
+4. Create NewsCardsPanel.tsx component
+5. Add client tool listener to WebSocket connection
+6. Add show_cards client tool in ElevenLabs dashboard (manual step)
+7. Update all 3 system prompts in lib/prompts.ts
+8. Wire NewsCardsPanel into CompanionScreen between orb and transcript
+9. Create /api/scrape route
+10. Create ExpandedCard.tsx modal
+11. Create TrendingTopics.tsx chips with dynamic loading
+12. Add Share button + html2canvas to VerdictCard
+13. Add all polish items (loading skeleton, source badges, LIVE badge, status dots)
+
+=================================================
+DEFINITION OF DONE
+=================================================
+✓ User asks a news question
+✓ Firecrawl searches → returns cards data
+✓ Agent calls show_cards client tool  
+✓ Cards slide in on screen while agent speaks
+✓ User says "show me more" → expanded card appears
+✓ Trending chips load dynamically from live Firecrawl search on app load
+✓ Tapping chip fires topic to agent
+✓ LIVE badge visible
+✓ Status dot changes correctly through all states
+✓ Share button on verdict card generates PNG
+✓ Everything works on mobile viewport
+✓ No console errors
+✓ NO hardcoded news content anywhere
+
+=================================================
+IMPORTANT TECHNICAL NOTES
+=================================================
+
+- The show_cards client tool is the critical integration.
+  If ElevenLabs SDK doesn't support client_tool_call event,
+  use this alternative: store cards in /api/search response,
+  have frontend poll a temporary endpoint, or use a 
+  server-sent event (SSE) to push cards to frontend when 
+  Firecrawl returns results.
+
+- For images: many news sites block og:image hotlinking.
+  If image fails to load → show a gradient placeholder with
+  the source name's first letter as a large centered character.
+
+- date-fns for "2h ago" formatting:
+  npm install date-fns
+  import { formatDistanceToNow } from 'date-fns'
+
+- html2canvas for share image:
+  npm install html2canvas
+  
+- For the scrape route — only scrape when user explicitly 
+  asks to see more. Don't auto-scrape. Firecrawl credits 
+  are limited.
+
+- Mobile first. The demo video will likely be filmed on 
+  a phone screen. Every component must look good at 390px width.

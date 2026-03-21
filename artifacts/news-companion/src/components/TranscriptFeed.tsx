@@ -2,10 +2,7 @@ import { useEffect, useRef } from "react";
 import { useAppStore, Message } from "../store/useAppStore";
 
 function formatTime(ts: number) {
-  return new Date(ts).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 const roleColors: Record<Message["role"], string> = {
@@ -48,7 +45,7 @@ export function TranscriptFeed({ companionName }: TranscriptFeedProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+    <div className="flex flex-col gap-3 max-h-48 overflow-y-auto pr-1" style={{ scrollbarWidth: "none" }}>
       {transcript.map((msg, i) => (
         <div
           key={i}
@@ -73,6 +70,29 @@ export function TranscriptFeed({ companionName }: TranscriptFeedProps) {
           >
             {msg.text}
           </div>
+          {/* Source badges */}
+          {msg.sources && msg.sources.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-0.5 max-w-[85%]">
+              {msg.sources.map((src, si) => (
+                <a
+                  key={si}
+                  href={`https://${src}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-white/40 text-xs hover:text-white/70 transition-colors"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+                >
+                  <img
+                    src={`https://www.google.com/s2/favicons?sz=16&domain=${src}`}
+                    alt={src}
+                    className="w-3 h-3"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  {src}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       <div ref={bottomRef} />
