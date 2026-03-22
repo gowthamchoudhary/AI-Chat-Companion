@@ -7,11 +7,11 @@ type AgentMode = "companion" | "analyst" | "advocate";
 function getAgentId(mode: AgentMode): string {
   switch (mode) {
     case "companion":
-      return process.env.ELEVENLABS_AGENT_COMPANION_ID || "";
+      return process.env.COMPANION_AGENT_ID || "";
     case "analyst":
-      return process.env.ELEVENLABS_AGENT_ANALYST_ID || "";
+      return process.env.ANALYST_AGENT_ID || "";
     case "advocate":
-      return process.env.ELEVENLABS_AGENT_ADVOCATE_ID || "";
+      return process.env.ADVOCATE_AGENT_ID || "";
   }
 }
 
