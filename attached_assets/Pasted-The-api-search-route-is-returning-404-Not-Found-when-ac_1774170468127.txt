@@ -1,0 +1,92 @@
+The /api/search route is returning 404 Not Found when 
+accessed at:
+https://ai-chat-companion--jayavarapugowth.replit.app/api/search
+
+This means either:
+1. The file app/api/search/route.ts doesn't exist
+2. Or the Next.js app isn't building/running correctly
+
+Please do the following:
+
+1. Check if app/api/search/route.ts exists. If not, create it.
+
+2. The file should contain exactly this:
+
+import { NextRequest, NextResponse } from 'next/server'
+
+const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY
+
+export async function POST(req: NextRequest) {
+  try {
+    const { query } = await req.json()
+
+    if (!query) {
+      return NextResponse.json(
+        { error: 'Query is required' },
+        { status: 400 }
+      )
+    }
+
+    const response = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({
+        query: query,
+        limit: 5,
+        scrapeOptions: {
+          formats: ['markdown'],
+        }
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!data.success) {
+      return NextResponse.json(
+        { error: 'Search failed', details: data },
+        { status: 500 }
+      )
+    }
+
+    // Text for agent to speak
+    const result = data.data
+      .slice(0, 3)
+      .map((r: any) => `${r.title}: ${r.description}`)
+      .join('\n')
+
+    // Structured cards for frontend
+    const cards = data.data.slice(0, 5).map((r: any) => ({
+      title: r.title || '',
+      description: r.description || '',
+      url: r.url || '',
+      image: r.metadata?.ogImage || r.metadata?.image || null,
+      source: r.url ? new URL(r.url).hostname.replace('www.', '') : '',
+      publishedDate: r.metadata?.publishedDate || null,
+    }))
+
+    return NextResponse.json({ result, cards })
+
+  } catch (error) {
+    console.error('Search error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { status: 'Search API is running' },
+    { status: 200 }
+  )
+}
+
+3. After creating/fixing the file, restart the Replit app.
+
+4. Confirm the route is live by checking that visiting:
+https://ai-chat-companion--jayavarapugowth.replit.app/api/search
+returns: {"status":"Search API is running"}
