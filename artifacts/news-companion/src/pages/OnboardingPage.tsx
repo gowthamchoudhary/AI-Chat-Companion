@@ -64,22 +64,43 @@ export function OnboardingPage() {
         {step === 1 ? (
           <motion.div
             key="step1"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial="hidden"
+            animate="visible"
+            exit={{ opacity: 0, y: -24, transition: { duration: 0.2 } }}
+            variants={{
+              hidden: {},
+              visible: { transition: { staggerChildren: 0.1 } },
+            }}
             className="flex flex-col items-center gap-8 w-full max-w-sm"
           >
-            <div className="text-center">
-              <div className="text-4xl mb-3">🌐</div>
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 30, scale: 0.92 },
+                visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 260, damping: 22 } },
+              }}
+              className="text-center"
+            >
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 18, delay: 0.05 }}
+                className="text-4xl mb-3"
+              >
+                🌐
+              </motion.div>
               <h1 className="text-2xl font-bold text-white leading-tight">
                 What do you want to call your AI companion?
               </h1>
               <p className="mt-2 text-white/40 text-sm">
                 They'll answer any news question with live data
               </p>
-            </div>
+            </motion.div>
 
-            <input
+            <motion.input
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 240, damping: 24 } },
+              }}
               type="text"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
@@ -89,13 +110,18 @@ export function OnboardingPage() {
               autoFocus
             />
 
-            <button
+            <motion.button
+              variants={{
+                hidden: { opacity: 0, y: 16 },
+                visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 220, damping: 24 } },
+              }}
+              whileTap={{ scale: 0.97 }}
               onClick={handleNameContinue}
               disabled={!nameInput.trim()}
               className="w-full py-4 rounded-2xl bg-violet-600 text-white font-semibold text-base hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-violet-600/20"
             >
               Continue →
-            </button>
+            </motion.button>
           </motion.div>
         ) : (
           <motion.div
