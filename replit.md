@@ -10,18 +10,24 @@ Full-stack AI-powered conversational news companion web app. Users name their AI
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **API framework**: Express 5 (main server, port 5000)
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **Build**: esbuild (CJS bundle for server), Vite (for news-companion frontend)
+
+## Architecture
+
+Everything is served from a single Express server on **port 5000**:
+- The news companion React app is pre-built (`artifacts/news-companion/dist/public`) and served as static files
+- All API routes (`/api/*`) are handled by the Express server
+- The workflow builds the news companion then starts Express
 
 ## Features
 
 - **Onboarding**: Name input + voice picker (5 ElevenLabs voices)
 - **Chat Mode**: Talk to named AI companion with live Firecrawl web search
 - **Debate Me Mode**: AI takes opposing view and debates the user voice-to-voice
-- **Watch Debate Mode**: Two AI agents (The Analyst + The Advocate) debate live; user can interrupt; auto-generates verdict via OpenAI
+- **Watch Debate Mode**: Two AI agents (The Analyst + The Advocate) debate live; user can interrupt; auto-generates verdict via Groq
 - **VoiceOrb**: Animated Framer Motion orb with idle/listening/speaking states
 - **TranscriptFeed**: Live scrolling conversation log color-coded by role
 - **VerdictCard**: Post-debate summary with bullet points + one-line verdict
@@ -29,49 +35,48 @@ Full-stack AI-powered conversational news companion web app. Users name their AI
 ## Structure
 
 ```text
-artifacts-monorepo/
+/
+├── server/                     # Main Express server (port 5000)
+│   ├── index.ts                # Server entry point
+│   ├── routes.ts               # All API routes: /api/search, /api/agent-token, /api/verdict
+│   ├── static.ts               # Serves artifacts/news-companion/dist/public as static files
+│   └── vite.ts                 # Dev mode: serves news-companion static build (no HMR)
 ├── artifacts/
-│   ├── api-server/             # Express API server
+│   ├── news-companion/         # React + Vite frontend (built to dist/public/)
 │   │   └── src/
-│   │       ├── routes/
-│   │       │   ├── search.ts       # POST /api/search (Firecrawl webhook)
-│   │       │   ├── agent-token.ts  # POST /api/agent-token (ElevenLabs signed URL)
-│   │       │   └── verdict.ts      # POST /api/verdict (OpenAI debate summary)
-│   │       └── lib/
-│   │           └── firecrawl.ts    # Firecrawl client
-│   └── news-companion/         # React + Vite frontend
-│       └── src/
-│           ├── store/useAppStore.ts     # Zustand global state
-│           ├── lib/
-│           │   ├── prompts.ts           # System prompts for all 3 agents
-│           │   └── elevenlabs.ts        # ElevenLabs browser session helpers
-│           ├── components/
-│           │   ├── VoiceOrb.tsx         # Animated orb (idle/listening/speaking)
-│           │   ├── ModeBar.tsx          # Mode switcher (Chat/Debate Me/Watch Debate)
-│           │   ├── CompanionScreen.tsx  # Main app wrapper with ElevenLabs sessions
-│           │   ├── DebateArena.tsx      # Two-agent debate UI
-│           │   ├── TranscriptFeed.tsx   # Live scrolling conversation
-│           │   └── VerdictCard.tsx      # Post-debate summary card
-│           └── pages/
-│               ├── OnboardingPage.tsx   # Step 1: name, Step 2: voice picker
-│               └── CompanionPage.tsx    # Main companion screen
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-└── scripts/                # Utility scripts
+│   │       ├── store/useAppStore.ts     # Zustand global state
+│   │       ├── components/
+│   │       │   ├── VoiceOrb.tsx         # Animated orb (idle/listening/speaking)
+│   │       │   ├── ModeBar.tsx          # Mode switcher (Chat/Debate Me/Watch Debate)
+│   │       │   ├── CompanionScreen.tsx  # Main app wrapper with ElevenLabs sessions
+│   │       │   ├── DebateArena.tsx      # Two-agent debate UI
+│   │       │   ├── TranscriptFeed.tsx   # Live scrolling conversation
+│   │       │   └── VerdictCard.tsx      # Post-debate summary card
+│   │       └── pages/
+│   │           ├── OnboardingPage.tsx   # Step 1: name, Step 2: voice picker
+│   │           └── CompanionPage.tsx    # Main companion screen
+│   └── api-server/             # Standalone API server (port 8080, separate artifact)
+├── shared/schema.ts            # Drizzle ORM schema + Zod types
+└── client/                     # Legacy client shell (unused, news-companion replaces it)
 ```
+
+## Workflow
+
+The "Start application" workflow runs:
+```
+PORT=24815 BASE_PATH=/ pnpm --filter @workspace/news-companion run build && npm run dev
+```
+This builds the news companion to `artifacts/news-companion/dist/public/` then starts the Express server on port 5000.
 
 ## Environment Variables Required
 
-Add these in Secrets:
-- `FIRECRAWL_API_KEY` — from app.firecrawl.dev
+All stored in Replit Secrets:
+- `FIRECRAWL_API_KEY` — from app.firecrawl.dev (powers /api/search)
 - `ELEVENLABS_API_KEY` — from elevenlabs.io/settings
-- `ELEVENLABS_AGENT_COMPANION_ID` — companion agent ID from ElevenLabs dashboard
-- `ELEVENLABS_AGENT_ANALYST_ID` — analyst agent ID from ElevenLabs dashboard
-- `ELEVENLABS_AGENT_ADVOCATE_ID` — advocate agent ID from ElevenLabs dashboard
-- `OPENAI_API_KEY` — from platform.openai.com
+- `COMPANION_AGENT_ID` — companion agent ID from ElevenLabs dashboard
+- `ANALYST_AGENT_ID` — analyst agent ID from ElevenLabs dashboard
+- `ADVOCATE_AGENT_ID` — advocate agent ID from ElevenLabs dashboard
+- `GROK_API_KEY` — Groq API key (powers /api/verdict debate summaries)
 
 ## ElevenLabs Agent Setup (Manual)
 
